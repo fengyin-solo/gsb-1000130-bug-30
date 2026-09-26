@@ -16,14 +16,25 @@ class StaffService:
     def list_entries(
         self,
         *,
-        keyword: str | None = None,
+        number: str | None = None,
+        name: str | None = None,
+        title: str | None = None,
         status: str | None = None,
         page: int = 1,
         size: int = 20,
     ) -> tuple[list[dict[str, Any]], int]:
+        """按编号、姓名、职称模糊筛选，再按状态精确过滤；多个条件取交集，冲突时返回空页。"""
         rows = store.rows(MODULE)
-        if keyword:
-            rows = [row for row in rows if keyword in str(row.get("员工编号", ""))]
+        number = (number or "").strip()
+        name = (name or "").strip()
+        title = (title or "").strip()
+        status = (status or "").strip()
+        if number:
+            rows = [row for row in rows if number in str(row.get("员工编号", ""))]
+        if name:
+            rows = [row for row in rows if name in str(row.get("姓名", ""))]
+        if title:
+            rows = [row for row in rows if title in str(row.get("技术职称", ""))]
         if status:
             rows = [row for row in rows if row.get("status") == status]
         total = len(rows)

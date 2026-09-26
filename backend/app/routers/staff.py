@@ -18,16 +18,39 @@ STATUSES = ["在岗", "培训中", "离岗", "停岗"]
 
 @router.get("", response_model=PageResult[dict])
 def list_entries(
-    keyword: str | None = Query(default=None, description="按员工编号检索"),
+    number: str | None = Query(default=None, description="按员工编号模糊检索"),
+    name: str | None = Query(default=None, description="按姓名模糊检索"),
+    title: str | None = Query(default=None, description="按技术职称模糊检索"),
     status: str | None = Query(default=None, description="在岗、培训中、离岗、停岗"),
     page: int = 1,
     size: int = 20,
 ) -> PageResult[dict]:
-    """按员工编号与状态过滤检测人员列表；没有数据时返回空页，不报错。"""
+    """按编号、姓名、职称、状态组合过滤检测人员列表；条件冲突时返回空页，不报错。"""
     if size > 200:
         raise HTTPException(status_code=400, detail="每页最多 200 条，请缩小分页范围")
-    items, total = service.list_entries(keyword=keyword, status=status, page=page, size=size)
+    if status and status.strip() and status.strip() not in STATUSES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"状态「{status}」不在允许范围：{'、'.join(STATUSES)}",
+        )
+    items, total = service.list_entries(
+        number=number, name=name, title=title, status=status, page=page, size=size
+    )
     return PageResult(items=items, total=total, page=page, size=size)
+
+
+@router.get("/export")
+def export_entries(
+    number: str | None = Query(default=None, description="按员工编号模糊检索"),
+    name: str | None = Query(default=None, description="按姓名模糊检索"),
+    title: str | None = Query(default=None, description="按技术职称模糊检索"),
+    status: str | None = Query(default=None, description="在岗、培训中、离岗、停岗"),
+) -> dict[str, Any]:
+    """导出检测人员清单：返回当前过滤条件下的全量数据。"""
+    items, total = service.list_entries(
+        number=number, name=name, title=title, status=status, page=1, size=10000
+    )
+    return {"module": "staff", "total": total, "items": items}
 
 
 @router.get("/{entry_id}", response_model=dict)
@@ -50,16 +73,11 @@ def create_entry(payload: EntryPayload) -> ActionResult:
 
 @router.post("/{entry_id}/actions", response_model=ActionResult)
 def run_action(entry_id: int, payload: EntryPayload) -> ActionResult:
-    """对单条检测员执行安排培训、确认离岗、恢复在岗；不允许的动作会被拦下并说明原因。"""
+    """对单条检测员执行安排培训、确认离岗、恢复在岗；记录不存在返回 404，动作冲突返回 409。"""
+    if service.get_entry(entry_id) is None:
+        raise HTTPException(status_code=404, detail=f"检测员 {entry_id} 不存在或已归档")
     action = str(payload.values.get("action") or "").strip()
     entry, message = service.run_action(entry_id, action)
     if entry is None:
-        return ActionResult(ok=False, message=message)
+        raise HTTPException(status_code=409, detail=message)
     return ActionResult(ok=True, message=message, entry=entry)
-
-
-@router.get("/export")
-def export_entries() -> dict[str, Any]:
-    """导出检测人员清单：返回当前过滤条件下的全量数据。"""
-    items, total = service.list_entries(page=1, size=10000)
-    return {"module": "staff", "total": total, "items": items}

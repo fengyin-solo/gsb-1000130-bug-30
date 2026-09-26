@@ -19,3 +19,28 @@ export async function fetchJson<T>(path: string): Promise<T> {
   }
   return (await response.json()) as T
 }
+
+/** 读取响应体；接口异常时体可能不是 JSON，解析失败按空处理而不是再抛一次。 */
+export async function readPayload(response: Response): Promise<Record<string, unknown> | null> {
+  try {
+    return (await response.json()) as Record<string, unknown>
+  } catch {
+    return null
+  }
+}
+
+/** 从响应体里挑一句可读的说明：优先 FastAPI 的 detail，其次业务约定的 message。 */
+export function payloadMessage(payload: Record<string, unknown> | null): string | null {
+  if (!payload) {
+    return null
+  }
+  const detail = payload.detail
+  if (typeof detail === 'string' && detail) {
+    return detail
+  }
+  const message = payload.message
+  if (typeof message === 'string' && message) {
+    return message
+  }
+  return null
+}

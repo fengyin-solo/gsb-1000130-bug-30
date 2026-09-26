@@ -13,6 +13,7 @@ const Deviation = () => import('@/views/deviation/index.vue')
 const SampleStorage = () => import('@/views/sample_storage/index.vue')
 const Contract = () => import('@/views/contract/index.vue')
 const Staff = () => import('@/views/staff/index.vue')
+const StaffDetail = () => import('@/views/staff/detail.vue')
 const Method = () => import('@/views/method/index.vue')
 const Environment = () => import('@/views/environment/index.vue')
 const Complain = () => import('@/views/complain/index.vue')
@@ -36,6 +37,7 @@ const router = createRouter({
     { path: '/sample_storage', name: 'sample_storage', component: SampleStorage },
     { path: '/contract', name: 'contract', component: Contract },
     { path: '/staff', name: 'staff', component: Staff },
+    { path: '/staff/:id', name: 'staff-detail', component: StaffDetail },
     { path: '/method', name: 'method', component: Method },
     { path: '/environment', name: 'environment', component: Environment },
     { path: '/complain', name: 'complain', component: Complain },
