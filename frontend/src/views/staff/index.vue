@@ -23,6 +23,13 @@
         <span>{{ field }}</span>
         <input v-model="filters[field]" :placeholder="`按${field}检索`" />
       </label>
+      <label class="filter-item">
+        <span>在岗状态</span>
+        <select v-model="statusFilter">
+          <option value="">全部状态</option>
+          <option v-for="status in statuses" :key="status" :value="status">{{ status }}</option>
+        </select>
+      </label>
       <button class="btn" type="submit">查询</button>
       <button class="btn ghost" type="button" @click="resetFilters">重置条件</button>
     </form>
@@ -50,7 +57,9 @@
           </td>
         </tr>
         <tr v-if="!rows.length">
-          <td :colspan="columns.length + 1" class="empty-state">暂无检测人员数据，可先登记检测员</td>
+          <td :colspan="columns.length + 1" class="empty-state">
+            {{ hasCriteria ? '没有符合条件的检测人员记录，可调整或重置条件' : '暂无检测人员数据，可先登记检测员' }}
+          </td>
         </tr>
       </tbody>
     </table>
@@ -63,7 +72,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 
 import { request } from '@/api/client'
 
@@ -79,15 +88,51 @@ const rows = ref<Row[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
+const statusFilter = ref('')
 const filterFields = columns.slice(0, 3)
+
+// 只认最后一次查询的响应：连续操作时慢一拍的旧响应不许覆盖新结果
+let requestSeq = 0
+
+const hasCriteria = computed(
+  () => Boolean(statusFilter.value) || filterFields.some((field) => (filters.value[field] ?? '').trim()),
+)
+
+function buildQuery(): string {
+  const params = new URLSearchParams()
+  for (const field of filterFields) {
+    const value = (filters.value[field] ?? '').trim()
+    if (value) {
+      params.set(field, value)
+    }
+  }
+  if (statusFilter.value) {
+    params.set('status', statusFilter.value)
+  }
+  return params.toString()
+}
+
+async function readDetail(response: Response, fallback: string): Promise<string> {
+  try {
+    const payload = await response.json()
+    if (typeof payload?.detail === 'string') {
+      return payload.detail
+    }
+  } catch {
+    // 响应体不是 JSON 时退回默认说明
+  }
+  return fallback
+}
 
 function resetFilters() {
   filters.value = {}
+  statusFilter.value = ''
   void reload()
 }
 
 function exportRows() {
-  window.open(`${ENDPOINT}/export`, '_blank')
+  const query = buildQuery()
+  window.open(`${ENDPOINT}/export${query ? `?${query}` : ''}`, '_blank')
 }
 
 function openCreate() {
@@ -102,8 +147,9 @@ async function runAction(action: string, row: Row) {
       body: JSON.stringify({ action }),
     })
     if (!response.ok) {
-      throw new Error('检测人员动作未生效，请稍后重试')
+      throw new Error(await readDetail(response, '检测人员动作未生效，请稍后重试'))
     }
+    // 按当前筛选条件刷新，定位保持在原结果集，不回到开头
     await reload()
   } catch (error) {
     errorMessage.value = error instanceof Error ? error.message : '检测人员操作失败'
@@ -112,16 +158,24 @@ async function runAction(action: string, row: Row) {
 
 async function reload() {
   errorMessage.value = ''
-  const query = new URLSearchParams(filters.value as Record<string, string>).toString()
+  const seq = ++requestSeq
+  const query = buildQuery()
   try {
     const response = await request(`${ENDPOINT}?${query}`)
     if (!response.ok) {
-      throw new Error('检测员列表读取失败')
+      throw new Error(await readDetail(response, '检测员列表读取失败'))
     }
     const payload = await response.json()
+    if (seq !== requestSeq) {
+      return
+    }
     rows.value = payload.items ?? []
     total.value = payload.total ?? rows.value.length
   } catch (error) {
+    if (seq !== requestSeq) {
+      return
+    }
+    // 读取失败时保留当前列表与条件，明细不丢，只提示原因
     errorMessage.value = error instanceof Error ? error.message : '检测人员列表读取失败'
   }
 }
